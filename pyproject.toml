@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "model-router-mcp"
+version = "0.1.0"
+description = "MCP server that dynamically selects the optimal Claude model for any prompt"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40.0",
+    "mcp>=1.0.0",
+]

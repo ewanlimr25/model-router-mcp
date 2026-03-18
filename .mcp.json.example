@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "model-router": {
+      "command": "python",
+      "args": ["server.py"],
+      "cwd": "/Users/ewan/Development/model-router-mcp"
+    }
+  }
+}
