@@ -6,12 +6,13 @@ An MCP server that automatically selects the optimal Claude model for every prom
 
 Every Claude Code session locks you into a single model for the entire conversation. You manually pick Sonnet or Opus at the start, then use it for everything — whether you're asking a simple question or designing a full system architecture.
 
-This MCP server fixes that. Enable it once globally and Claude Code gains two tools it can call automatically:
+This MCP server adds model-awareness. It works in two modes:
 
-- **`select_model`** — classifies any prompt and recommends the right model (Haiku, Sonnet, or Opus) based on task complexity
-- **`compare_models`** — shows a cost/fit breakdown across all models so you can make an informed tradeoff
+**Claude Code (interactive)**
+Claude Code calls `select_model` automatically and surfaces the recommendation. Because Claude Code can't switch its own model mid-session, it tells you which model would be better and you switch via `/model`. It's advisory — but it means you're always informed rather than guessing.
 
-You stop thinking about models. The agent does it for you.
+**Standalone / custom agents (programmatic)**
+Your agent loop calls `get_routing_decision`, gets back structured JSON with the model ID, and routes the actual API call automatically. Full closed-loop routing with no user intervention.
 
 ## How it works
 
@@ -31,8 +32,7 @@ Routing decision
       high complexity   →  claude-opus-4-6    (most capable)
     │
     ▼
-Recommendation returned to Claude Code
-Claude Code uses the right model for that specific task
+Recommendation returned to Claude Code or your agent
 ```
 
 The classifier itself always uses Haiku — it's cheap and fast enough that the overhead is negligible. You're not paying Opus prices to decide whether to use Opus.
@@ -77,9 +77,12 @@ Replace `/path/to/model-router-mcp` with the actual path where you cloned the re
 
 **3. Restart Claude Code**
 
-The `select_model` and `compare_models` tools will appear automatically in every session, across every project.
+Three tools appear automatically in every session, across every project:
+- `select_model` — human-readable recommendation, Claude Code surfaces it to you
+- `compare_models` — cost/fit breakdown across all models
+- `get_routing_decision` — structured JSON for programmatic agent loops
 
-That's it. You don't touch it again.
+**Important:** Claude Code cannot switch its own model mid-session. When `select_model` recommends a different model, Claude Code will tell you and you switch manually with `/model`. This is a Claude Code limitation, not a server limitation — in a custom agent loop, `get_routing_decision` gives you the model ID and your code routes the API call directly.
 
 ## Global vs project-level
 
@@ -92,7 +95,24 @@ For a routing tool like this, global makes the most sense — you want it everyw
 
 ## Example output
 
-### `select_model`
+### `get_routing_decision` (programmatic)
+
+```json
+{
+  "recommended_model": "claude-opus-4-6",
+  "task_type": "architecture",
+  "complexity": "high",
+  "reasoning": "Requires expert-level reasoning across multiple competing constraints.",
+  "confidence": 0.92,
+  "estimated_output_length": "long",
+  "cost_per_1m_input": 5.0,
+  "cost_per_1m_output": 25.0
+}
+```
+
+Your agent loop extracts `recommended_model` and passes it directly to the Anthropic API.
+
+### `select_model` (Claude Code / interactive)
 
 ```
 Recommended model: claude-opus-4-6

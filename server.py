@@ -1,28 +1,34 @@
 """
 Model Router MCP Server
 
-Exposes two tools to any MCP-compatible agent host (Claude Code, custom agents, etc.):
+Works in two modes:
 
-  select_model(prompt, context?)
-    → recommends the optimal Claude model for a given prompt
+  Claude Code (interactive):
+    select_model / compare_models return human-readable text.
+    Claude Code surfaces the recommendation to the user, who can then
+    switch models via /model. Claude Code cannot switch its own model
+    mid-session — the tool is advisory.
 
-  compare_models(prompt)
-    → returns cost and capability comparison across all models for a prompt
+  Standalone / programmatic (custom agent loops):
+    get_routing_decision returns structured JSON so your code can extract
+    the model ID and route the API call automatically.
 
 Usage:
   python server.py
 
-Add to .mcp.json:
+Add to ~/.claude/mcp.json (global) or .mcp.json (project):
   {
     "mcpServers": {
       "model-router": {
         "command": "python",
         "args": ["server.py"],
-        "cwd": "/Users/ewan/Development/model-router-mcp"
+        "cwd": "/path/to/model-router-mcp"
       }
     }
   }
 """
+
+import json
 
 from mcp.server.fastmcp import FastMCP
 
@@ -32,8 +38,11 @@ from models import MODELS
 mcp = FastMCP(
     "model-router",
     instructions=(
-        "Use select_model before running any significant task to determine the optimal "
-        "Claude model. Use compare_models when the user wants to understand cost tradeoffs."
+        "Use select_model before starting any significant task to recommend the optimal "
+        "Claude model. Tell the user the recommendation and suggest they switch via /model "
+        "if a different model would serve them better. "
+        "Use compare_models when the user wants to understand cost tradeoffs across models. "
+        "Use get_routing_decision when a programmatic client needs structured JSON output."
     ),
 )
 
@@ -77,6 +86,12 @@ def select_model(prompt: str, context: str = "") -> str:
             f"⚠️  Low confidence ({result['confidence']:.0%}). Consider using "
             f"claude-sonnet-4-6 as a safe default, or provide more context.",
         ]
+
+    # Claude Code advisory note
+    lines += [
+        "",
+        "Note: To switch models in Claude Code, use /model in the chat.",
+    ]
 
     return "\n".join(lines)
 
@@ -127,6 +142,45 @@ def compare_models(prompt: str) -> str:
     ]
 
     return "\n".join(lines)
+
+
+@mcp.tool()
+def get_routing_decision(prompt: str, context: str = "") -> str:
+    """
+    Return a structured JSON routing decision for programmatic use.
+
+    Designed for custom agent loops that need to extract the model ID and
+    route an API call automatically — not for interactive Claude Code sessions.
+
+    Returns JSON with:
+      recommended_model  — exact model ID to pass to the Anthropic API
+      task_type          — classified task category
+      complexity         — low / medium / high
+      reasoning          — one-sentence explanation
+      confidence         — float 0.0–1.0
+      estimated_output_length — short / medium / long
+      cost_per_1m_input  — input cost in USD per 1M tokens
+      cost_per_1m_output — output cost in USD per 1M tokens
+
+    Args:
+        prompt:  The user prompt or task description to evaluate.
+        context: Optional context to improve classification accuracy.
+    """
+    result = classify(prompt, context)
+    model_info = MODELS[result["recommended_model"]]
+
+    payload = {
+        "recommended_model":      result["recommended_model"],
+        "task_type":               result["task_type"],
+        "complexity":              result["complexity"],
+        "reasoning":               result["reasoning"],
+        "confidence":              result["confidence"],
+        "estimated_output_length": result["estimated_output_length"],
+        "cost_per_1m_input":       model_info["cost_input_per_1m"],
+        "cost_per_1m_output":      model_info["cost_output_per_1m"],
+    }
+
+    return json.dumps(payload, indent=2)
 
 
 if __name__ == "__main__":
